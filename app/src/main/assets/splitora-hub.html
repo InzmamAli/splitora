@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Splitora - Share the bills, keep the peace</title>
+<style>
+:root{--navy:#0f2a43;--teal:#14b8a6;--amber:#f59e0b;--coral:#f97360;--bg:#f0f7f6;--card:#fff;--ink:#14293d;--muted:#5f7185;--ok:#0f9d6b;--bad:#e11d48;--line:#dfeceb}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+header{background:linear-gradient(135deg,var(--navy),#0e7c7b 60%,var(--teal));color:#fff;padding:22px 16px 64px}
+header h1{margin:0;font-size:24px;letter-spacing:.3px}
+header p{margin:4px 0 0;opacity:.9;font-size:14px}
+main{max-width:780px;margin:-44px auto 40px;padding:0 12px}
+nav{display:flex;gap:6px;overflow-x:auto;padding:4px 2px 10px;margin-bottom:6px}
+nav button,.pill{border:0;border-radius:999px;padding:9px 14px;background:#fff;color:var(--navy);cursor:pointer;font-weight:600;box-shadow:0 1px 4px #0f2a4319;white-space:nowrap;font-size:14px}
+nav button.on{background:linear-gradient(135deg,var(--teal),var(--amber));color:#fff;box-shadow:0 4px 12px #14b8a666}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 2px 12px #0f2a4312}
+.card h2{font-size:16px;margin:0 0 12px;color:var(--navy)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--bg);border-radius:12px;padding:12px;border-left:4px solid var(--teal)}
+.stat small{color:var(--muted)}
+.stat b{display:block;font-size:18px;margin-top:4px}
+.pos{color:var(--ok)}.neg{color:var(--bad)}
+form{display:grid;grid-template-columns:2fr 1fr;gap:8px}
+input,select{padding:10px;border:1px solid var(--line);border-radius:10px;font-size:14px;width:100%;background:#fff}
+form button,.btn{grid-column:1/-1;background:linear-gradient(135deg,var(--navy),var(--teal));color:#fff;border:0;border-radius:10px;padding:11px;font-weight:600;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:8px 4px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--muted);font-size:12px}
+.item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px;gap:8px}
+.item small{color:var(--muted);display:block}
+.del{background:none;border:0;color:var(--bad);cursor:pointer;font-size:18px}
+.ghost{background:none;border:1px solid var(--teal);color:var(--teal);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px}
+.bar{height:10px;background:var(--line);border-radius:99px;overflow:hidden;margin:8px 0}
+.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--amber))}
+.bar span.over{background:var(--bad)}
+.alert{padding:12px;border-radius:12px;font-size:14px;margin:8px 0}
+.alert.over{background:#ffe4e9;color:#9f1239}.alert.warn{background:#fff3d6;color:#8a5a00}.alert.ok{background:#d9f5ec;color:#0b6b4a}.alert.info{background:#dcf3f1;color:#0e5f5c}
+.muted{color:var(--muted);font-size:13px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row input{max-width:200px}
+.cat{margin:10px 0;font-size:13px}
+.cat div{display:flex;justify-content:space-between}
+.cat .bar{height:6px}
+a{color:var(--teal);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>🤝 Splitora</h1>
+  <p>Share the bills, keep the peace. Shared spending, personal budget, bills and daily essentials in one place.</p>
+</header>
+<main>
+  <div id="alarmBox"></div><nav id="nav"></nav>
+  <div id="app"></div>
+</main>
+
+<script>
+const KEY='splitora.hub.v1';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>'Rs '+Math.round(n).toLocaleString('en-PK');
+const today=()=>new Date().toISOString().slice(0,10);
+const CATS=['Food','Transport','Bills','Snacks','Shopping','Health','Education','Entertainment','Other'];
+const TIPS={Food:'Ghar ka khana ya lunch box rakhein, delivery kam karein.',Transport:'Trips group karein, ride share ya public transport use karein.',Bills:'AC, heater aur geyser ka use kam karein.',Snacks:'Bahar ki chai ki jagah ghar se flask le jayein.',Shopping:'Shopping ke liye 24 ghante ka rule rakhein.',Health:'Generic dawai lein, aur check-up ka schedule rakhein.',Education:'Books library ya free resources se dekhein.',Entertainment:'Unused subscriptions cancel karein.',Other:'Unplanned kharche note karein, yahin paise nikalte hain.'};
+const MEALS=[
+  {name:'Chicken Qorma',type:'rich',protein:'Chicken',note:'Bones wala chicken sasta hota hai, shorba bhi use karein.'},
+  {name:'Biryani (Aloo Chicken)',type:'rich',protein:'Chicken',note:'Aloo se rice ka hissa bhar jata hai, cost kam rehta hai.'},
+  {name:'Masoor Dal + Rice',type:'budget',protein:'Lentils',note:'Dal mein protein acha hai, tadka sasta padta hai.'},
+  {name:'Anda Bhurji + Roti (3 eggs)',type:'budget',protein:'Eggs',note:'Pyaz, tamatar aur hari mirch se bhurji bhari ban jati hai.'},
+  {name:'Chana Chaat',type:'budget',protein:'Chickpeas',note:'Kala chana ubal kar ghar ka chaat bana sakte hain.'},
+  {name:'Soya Chunk Pulao',type:'budget',protein:'Soya chunks',note:'Soya chunks bohot sasta aur high protein hai.'},
+  {name:'Anda Channa Curry',type:'budget',protein:'Eggs + Chickpeas',note:'Eggs aur chane ka combo, do protein sources ek saath.'},
+  {name:'Lentil Khichdi + Egg',type:'budget',protein:'Lentils + Egg',note:'Ek pot mein poora khana, cleanup bhi aasan.'}
+];
+const CONTACTS=[
+  ['Police','15','Emergency police help'],['Rescue Punjab (1122)','1122','Ambulance, rescue, fire (Punjab)'],
+  ['Edhi Ambulance','115','Ambulance service'],['SNGPL (Gas)','1199','Gas complaints and bills'],
+  ['LESCO (Electricity, Lahore)','118','Bijli complaints and bill queries']
+];
+const LINKS=[['OGRA petrol prices','https://ogra.org.pk'],['PTA (internet complaints)','https://pta.gov.pk'],['Punjab Govt services','https://punjab.gov.pk']];
+
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
+if(!S)S={members:['You','Friend'],shared:[],personal:{budget:0,catLimits:{},items:[]},bills:[],fuel:{price:398.30,date:'2026-10-09',litres:0},meals:{log:[]},tab:'shared'};
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+/* ---------- SHARED ---------- */
+function balances(){
+  const n=S.members.length,total=S.shared.reduce((s,x)=>s+x.amount,0),share=total/n;
+  const paid=S.members.map((_,i)=>S.shared.filter(x=>x.paidBy===i).reduce((s,x)=>s+x.amount,0));
+  return {total,share,paid,net:paid.map(p=>p-share)};
+}
+function settlements(net){
+  const cr=[],db=[],out=[];
+  net.forEach((v,i)=>{if(v>0.5)cr.push({i,v});else if(v<-0.5)db.push({i,v:-v})});
+  let a=0,b=0;
+  while(a<db.length&&b<cr.length){const x=Math.min(db[a].v,cr[b].v);out.push({from:db[a].i,to:cr[b].i,amt:x});db[a].v-=x;cr[b].v-=x;if(db[a].v<0.5)a++;if(cr[b].v<0.5)b++}
+  return out;
+}
+function sharedView(){
+  const B=balances(),n=S.members;
+  const alert=B.total>=10000?`<div class="alert warn"><b>Shared total ${money(B.total)} ho gaya hai.</b> Hisab clear karne ka sahi waqt hai, neeche settlement dekhein.</div>`:'';
+  const rows=n.map((m,i)=>`<tr><td>${esc(m)}</td><td>${money(B.paid[i])}</td><td>${money(B.share)}</td><td class="${B.net[i]>=0?'pos':'neg'}"><b>${B.net[i]>=0?'+':'-'}${money(Math.abs(B.net[i]))}</b></td></tr>`).join('');
+  const sets=settlements(B.net);
+  const setHtml=sets.length?sets.map(s=>`<div class="item"><span><b>${esc(n[s.from])}</b> pays <b>${esc(n[s.to])}</b></span><b>${money(s.amt)}</b></div>`).join(''):'<p class="muted">Everyone is square. Nothing to settle.</p>';
+  const list=S.shared.length?S.shared.map(x=>`<div class="item"><div><b>${esc(x.desc)}</b><small>${esc(x.cat)} · ${esc(n[x.paidBy])} paid · ${money(x.amount)}</small></div><button class="del" onclick="delShared(${x.id})">×</button></div>`).join(''):'<p class="muted">No shared expenses yet.</p>';
+  return `${alert}
+  <div class="card"><h2>Shared ledger</h2><div class="grid">
+    <div class="stat"><small>Total spent</small><b>${money(B.total)}</b></div>
+    <div class="stat"><small>Each person's share</small><b>${money(B.share)}</b></div></div></div>
+  <div class="card"><h2>Who paid what</h2><table><tr><th>Name</th><th>Paid</th><th>Share</th><th>Balance</th></tr>${rows}</table>
+    <p class="muted">+ means you will get money back, - means you owe.</p></div>
+  <div class="card"><h2>Settle up</h2>${setHtml}</div>
+  <div class="card"><h2>Add shared expense</h2><form onsubmit="event.preventDefault();addShared()">
+    <input id="sd" placeholder="Item (e.g. Chicken karahi)">
+    <input id="sa" type="number" min="0" placeholder="Amount (Rs)">
+    <select id="sp">${n.map((m,i)=>`<option value="${i}">${esc(m)} paid</option>`).join('')}</select>
+    <select id="sc">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+    <button type="submit">Add</button></form></div>
+  <div class="card"><h2>Shared history</h2>${list}</div>`;
+}
+function addShared(){const d=$('sd').value.trim(),a=parseFloat($('sa').value);if(!d||!(a>0))return alert('Please enter item and amount');S.shared.unshift({id:Date.now(),desc:d,amount:a,paidBy:+$('sp').value,cat:$('sc').value});save();render()}
+function delShared(id){S.shared=S.shared.filter(x=>x.id!==id);save();render()}
+
+/* ---------- PERSONAL ---------- */
+function personalView(){
+  const P=S.personal,now=new Date(),dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),daysLeft=dim-now.getDate()+1;
+  const pTotal=P.items.reduce((s,x)=>s+x.amount,0),spent=pTotal+balances().share,limit=P.budget,left=limit-spent,pct=limit?spent/limit*100:0;
+  const cats=Object.entries(P.items.reduce((m,e)=>(m[e.cat]=(m[e.cat]||0)+e.amount,m),{})).sort((a,b)=>b[1]-a[1]);
+  let al='';
+  if(limit>0){
+    if(spent>limit)al=`<div class="alert over"><b>Limit crossed by ${money(-left)}.</b> ${cats[0]?`Biggest spend is ${esc(cats[0][0])} (${money(cats[0][1])}). Cut ${money(-left)} from there first.`:''}</div>`;
+    else if(pct>=80)al=`<div class="alert warn"><b>Careful.</b> ${Math.round(pct)}% of budget used. Only ${money(left)} left.</div>`;
+    else al=`<div class="alert ok">On track. ${money(left)} left. Safe daily spend: <b>${money(left/daysLeft)}</b> (${daysLeft} days left).</div>`;
+  }
+  const catHtml=cats.length?cats.map(([c,v])=>{const p=Math.round(v/pTotal*100),lim=P.catLimits[c]||0,over=lim&&v>lim;
+    return `<div class="cat"><div><span>${esc(c)}${over?' <span class="neg">· over limit</span>':''}</span><b>${money(v)} (${p}%)</b></div><div class="bar"><span class="${over?'over':''}" style="width:${p}%"></span></div>${lim?`<small class="muted">Limit ${money(lim)}</small>`:''}</div>`}).join(''):'<p class="muted">No personal spending yet.</p>';
+  const tip=cats.length?`<div class="alert info"><b>Where to cut:</b> ${esc(cats[0][0])}. ${TIPS[cats[0][0]]||TIPS.Other}</div>`:'';
+  const list=P.items.length?P.items.map(x=>`<div class="item"><div><b>${esc(x.desc)}</b><small>${esc(x.cat)} · ${x.date}</small></div><div class="row"><b>${money(x.amount)}</b><button class="del" onclick="delPersonal(${x.id})">×</button></div></div>`).join(''):'<p class="muted">No entries.</p>';
+  const cl=CATS.map(c=>`<div class="row" style="margin:6px 0"><span style="width:120px">${c}</span><input type="number" min="0" id="cl_${c}" value="${P.catLimits[c]||''}" placeholder="Limit (Rs)"></div>`).join('');
+  return `<div class="card"><h2>Personal budget</h2><div class="grid">
+    <div class="stat"><small>Personal spend</small><b>${money(pTotal)}</b></div>
+    <div class="stat"><small>Your shared share</small><b>${money(balances().share)}</b></div>
+    <div class="stat"><small>Total this month</small><b class="${limit&&spent>limit?'neg':''}">${money(spent)}</b></div></div>
+    ${limit>0?`<div class="bar"><span class="${pct>100?'over':''}" style="width:${Math.min(pct,100)}%"></span></div>`:''}
+    ${al}${tip}
+    <div class="row" style="margin-top:10px"><input id="pb" type="number" min="0" placeholder="Monthly budget (Rs)" value="${limit||''}"><button class="ghost" onclick="setBudget()">Save budget</button></div></div>
+  <div class="card"><h2>Where your money goes</h2>${catHtml}</div>
+  <div class="card"><h2>Category limits</h2>${cl}<button class="btn" style="margin-top:10px" onclick="saveCatLimits()">Save limits</button></div>
+  <div class="card"><h2>Add personal expense</h2><form onsubmit="event.preventDefault();addPersonal()">
+    <input id="pd" placeholder="Item (e.g. Lunch)"><input id="pa" type="number" min="0" placeholder="Amount (Rs)">
+    <select id="pc">${CATS.map(c=>`<option>${c}</option>`).join('')}</select><input id="pdt" type="date" value="${today()}">
+    <button type="submit">Add</button></form></div>
+  <div class="card"><h2>Personal history</h2>${list}</div>`;
+}
+function addPersonal(){const d=$('pd').value.trim(),a=parseFloat($('pa').value);if(!d||!(a>0))return alert('Please enter item and amount');S.personal.items.unshift({id:Date.now(),desc:d,amount:a,cat:$('pc').value,date:$('pdt').value||today()});save();render()}
+function delPersonal(id){S.personal.items=S.personal.items.filter(x=>x.id!==id);save();render()}
+function setBudget(){S.personal.budget=parseFloat($('pb').value)||0;save();render()}
+function saveCatLimits(){CATS.forEach(c=>{const v=parseFloat($('cl_'+c).value);if(v>0)S.personal.catLimits[c]=v;else delete S.personal.catLimits[c]});save();render()}
+
+/* ---------- BILLS & FUEL ---------- */
+function dueInfo(b){const n=new Date(),last=new Date(n.getFullYear(),n.getMonth()+1,0).getDate();const due=new Date(n.getFullYear(),n.getMonth(),Math.min(b.dueDay,last));const t=new Date();t.setHours(0,0,0,0);return {due,days:Math.round((due-t)/864e5),paid:b.paidMonth===today().slice(0,7)}}
+function billsView(){
+  const f=S.fuel,monthly=f.litres*f.price;
+  const list=S.bills.length?S.bills.map(b=>{const {due,days,paid}=dueInfo(b);
+    const st=paid?'<span class="pos">Paid</span>':days<0?'<span class="neg">Overdue</span>':`Due in ${days} days`;
+    return `<div class="item"><div><b>${esc(b.name)}</b><small>${money(b.amount)} · due day ${b.dueDay} · ${st}</small></div><div class="row">${paid?'':`<button class="ghost" onclick="payBill(${b.id})">Mark paid</button>`}<button class="del" onclick="delBill(${b.id})">×</button></div></div>`}).join(''):'<p class="muted">No bills added.</p>';
+  const soon=S.bills.map(b=>({b,...dueInfo(b)})).filter(x=>!x.paid&&x.days<=5).map(x=>`<div class="alert ${x.days<0?'over':'warn'}"><b>${esc(x.b.name)}</b> ${money(x.b.amount)} ${x.days<0?'is overdue':x.days===0?'is due today':'is due in '+x.days+' days'}.</div>`).join('');
+  return `${soon}
+  <div class="card"><h2>Petrol price (Pakistan)</h2>
+    <p class="muted">Last saved: Rs ${f.price} per litre on ${f.date}. Latest notified figure at time of building. Prices change often, so update it from <a href="https://ogra.org.pk" target="_blank" rel="noopener">OGRA</a>.</p>
+    <div class="row"><input id="fp" type="number" step="0.01" placeholder="New price per litre" value="${f.price}"><input id="fd" type="date" value="${today()}"><button class="ghost" onclick="setFuel()">Update</button></div>
+    <div class="row" style="margin-top:10px"><input id="fl" type="number" min="0" placeholder="Litres per month" value="${f.litres||''}"><button class="ghost" onclick="setLitres()">Calculate</button></div>
+    <div class="alert info">Monthly petrol cost: <b>${money(monthly)}</b></div></div>
+  <div class="card"><h2>Add monthly bill</h2><form onsubmit="event.preventDefault();addBill()">
+    <input id="bn" placeholder="Bill name (e.g. Electricity - LESCO)"><input id="ba" type="number" min="0" placeholder="Amount (Rs)">
+    <input id="bd" type="number" min="1" max="31" placeholder="Due day of month (1-31)"><input id="br" placeholder="Reference number (optional)">
+    <button type="submit">Add bill</button></form></div>
+  <div class="card"><h2>Bills</h2>${list}</div>`;
+}
+function setFuel(){const p=parseFloat($('fp').value);if(p>0){S.fuel.price=p;S.fuel.date=$('fd').value||today();save();render()}}
+function setLitres(){S.fuel.litres=parseFloat($('fl').value)||0;save();render()}
+function addBill(){const n=$('bn').value.trim(),a=parseFloat($('ba').value),d=parseInt($('bd').value,10);if(!n||!(a>0)||!(d>=1&&d<=31))return alert('Enter name, amount and due day (1-31)');S.bills.push({id:Date.now(),name:n,amount:a,dueDay:d,ref:$('br').value.trim(),paidMonth:''});save();render()}
+function payBill(id){const b=S.bills.find(x=>x.id===id);if(!b)return;b.paidMonth=today().slice(0,7);S.personal.items.unshift({id:Date.now(),desc:b.name,amount:b.amount,cat:'Bills',date:today()});save();render()}
+function delBill(id){S.bills=S.bills.filter(b=>b.id!==id);save();render()}
+
+/* ---------- PRAYER TIMES (calculated offline, Lahore, Karachi method) ---------- */
+function prayerTimes(){
+  const lat=31.5204,lng=74.3587,tz=5,r=Math.PI/180,d=new Date();
+  const jd=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5+2440587.5;
+  const n=jd-2451545.0,L=(280.46+0.9856474*n)%360,g=(357.528+0.9856003*n)*r;
+  const lam=(L+1.915*Math.sin(g)+0.02*Math.sin(2*g))*r,eps=(23.439-0.0000004*n)*r;
+  const decl=Math.asin(Math.sin(eps)*Math.sin(lam));
+  let ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam))/r;let eq=((L-ra)%360+540)%360-180;
+  const eqt=4*eq;const noon=12-lng/15-eqt/60+tz;
+  const hourAngle=alt=>{const c=(Math.sin(alt*r)-Math.sin(lat*r)*Math.sin(decl))/(Math.cos(lat*r)*Math.cos(decl));return Math.acos(Math.max(-1,Math.min(1,c)))/r/15};
+  const asrAlt=Math.atan(1/(2+Math.tan(Math.abs(lat*r-decl))))/r;
+  const f=h=>{const x=((h%24)+24)%24;const hh=Math.floor(x),mm=Math.round((x-hh)*60);return String(hh).padStart(2,'0')+':'+String(mm===60?0:mm).padStart(2,'0')};
+  const H1=hourAngle(-18),H2=hourAngle(-0.833),H3=hourAngle(asrAlt);
+  return [['Fajr',noon-H1],['Sunrise',noon-H2],['Dhuhr',noon],['Asr',noon+H3],['Maghrib',noon+H2],['Isha',noon+H1]].map(([k,v])=>[k,f(v)]);
+}
+function prayerView(){
+  const pt=prayerTimes();
+  return `<div class="card"><h2>Prayer times · Lahore</h2>
+    <table>${pt.map(([k,v])=>`<tr><td><b>${k}</b></td><td style="text-align:right">${v}</td></tr>`).join('')}</table>
+    <div class="row" style="margin-bottom:10px"><button class="ghost" onclick="toggleAlarm()">${S.alarm?'Prayer alarm: ON 🔔':'Prayer alarm: OFF 🔕'}</button></div><div class="row" style="margin-bottom:10px"><input type="file" accept="audio/*" onchange="saveAzan(this)"><button class="ghost" onclick="beep()">Test sound</button>${S.azan?'<button class="ghost" onclick="removeAzan()">Remove azan</button>':''}</div><p class="muted">${S.azan?'Your azan recording is saved on this device and will play at prayer time.':'No azan file yet, so a beep and spoken Allahu Akbar will play. Upload your own azan recording (audio file, under 2 MB) to use it.'}</p>
+    <p class="muted"> (Karachi method, Hanafi Asr). May differ by a few minutes from your local mosque timetable. Confirm with it. Alarm sirf tab khula hone par chalta hai.</p></div>`;
+}
+
+/* ---------- GOVERNMENT CONTACTS ---------- */
+function govView(){
+  return `<div class="card"><h2>Emergency and utility contacts</h2>
+    ${CONTACTS.map(([n,num,d])=>`<div class="item"><div><b>${n}</b><small>${d}</small></div><b>${num}</b></div>`).join('')}
+    <p class="muted">Numbers are listed from memory. Please confirm them on the official website before relying on them in an emergency.</p></div>
+  <div class="card"><h2>Official websites</h2>${LINKS.map(([n,u])=>`<div class="item"><a href="${u}" target="_blank" rel="noopener">${n}</a></div>`).join('')}</div>`;
+}
+
+/* ---------- MEAL PLANNER ---------- */
+function oldMealsView(){
+  const log=S.meals.log,last=log[0],lastDate=last?last.date:null;
+  let sug;
+  if(!last)sug=MEALS.find(m=>m.type==='budget');
+  else if(last.type==='rich')sug=MEALS.find(m=>m.type==='budget'&&!log.slice(0,3).some(l=>l.name===m.name))||MEALS.find(m=>m.type==='budget');
+  else sug=MEALS.find(m=>!log.slice(0,4).some(l=>l.name===m.name))||MEALS[0];
+  const due=lastDate!==today();
+  const reminder=due?`<div class="alert info"><b>Reminder: cook today.</b> Suggested meal: <b>${esc(sug.name)}</b>. Protein: ${esc(sug.protein)}. ${esc(sug.note)}</div>`:`<div class="alert ok">Today's meal is already logged: ${esc(last.name)}.</div>`;
+  const plan=MEALS.map(m=>`<div class="item"><div><b>${esc(m.name)}</b><small>${m.type==='rich'?'Special day':'Budget day'} · Protein: ${esc(m.protein)} · ${esc(m.note)}</small></div>
+    <button class="ghost" onclick="cookMeal('${esc(m.name)}','${m.type}')">Cooked</button></div>`).join('');
+  const hist=log.length?log.slice(0,10).map(l=>`<div class="item"><span>${esc(l.name)}</span><span class="muted">${l.date}</span></div>`).join(''):'<p class="muted">No meals logged yet.</p>';
+  return `${reminder}
+  <div class="card"><h2>Meal planner</h2><p class="muted">Pattern: one special day (biryani, qorma), then a budget protein day. Tap Cooked to log it and get the next suggestion.</p>${plan}</div>
+  <div class="card"><h2>Recent meals</h2>${hist}</div>`;
+}
+function cookMeal(name,type){S.meals.log.unshift({id:Date.now(),name,type,date:today(),cost:0,where:'Cooked'});save();render()}
+
+function budgetPick(log){const b=MEALS.filter(m=>m.type==='budget');return b.find(m=>!log.slice(0,3).some(l=>l.name===m.name))||b[0]}
+function suggest(log){
+  const pick=budgetPick(log);
+  if(!log.length)return `Start with ${pick.name} (protein: ${pick.protein}). ${pick.note}`;
+  const outside=log.slice(0,3).filter(l=>l.where==='Outside').length;
+  if(outside>=2)return `Outside food is adding up. Cook ${pick.name} today. ${pick.note}`;
+  const lastMeal=MEALS.find(m=>m.name===log[0].name);
+  if(lastMeal&&lastMeal.type==='rich')return `Yesterday was a special day. Today go budget: ${pick.name}. ${pick.note} Leftovers bhi chun sakte hain.`;
+  return `${pick.name} (protein: ${pick.protein}). ${pick.note} Ya leftovers, ya bahar ka khana, jo bhi aaj chalega log kar dein.`;
+}
+function newMealsView(){
+  const log=S.meals.log,t=today(),todays=log.find(l=>l.date===t);
+  const weekAgo=new Date(Date.now()-6*864e5).toISOString().slice(0,10);
+  const week=log.filter(l=>l.date>=weekAgo);
+  const weekCost=week.reduce((s,l)=>s+(l.cost||0),0);
+  const top=todays?`<div class="alert ok">Today logged: <b>${esc(todays.name)}</b> (${esc(todays.where||'Cooked')}, ${money(todays.cost||0)})</div>`
+    :`<div class="alert info"><b>Today's suggestion:</b> ${esc(suggest(log))}</div>`;
+  const outsideCount=log.slice(0,3).filter(l=>l.where==='Outside').length;
+  const warn=outsideCount>=2?`<div class="alert warn">You ate outside ${outsideCount} times in your last 3 entries. A budget home-cooked meal today will save money.</div>`:'';
+  const opts=MEALS.map(m=>`<option>${esc(m.name)}</option>`).join('')+'<option>Leftovers (same meal)</option><option>Outside food</option><option>Other (custom)</option>';
+  const recent=log.slice(0,12).map((l,i)=>`<div class="item"><div><b>${esc(l.name)}</b><small>${l.date} · ${esc(l.where||'Cooked')} · ${money(l.cost||0)}</small></div><button class="del" onclick="delMeal(${i})">×</button></div>`).join('');
+  return `${top}${warn}
+  <div class="card"><h2>Log a meal</h2><form onsubmit="event.preventDefault();logMeal()">
+    <select id="mn">${opts}</select>
+    <input id="mc" type="number" min="0" placeholder="Cost (Rs)">
+    <select id="mw"><option>Cooked</option><option>Leftover</option><option>Outside</option></select>
+    <input id="mx" placeholder="Custom name (only for Other)">
+    <button type="submit">Save meal</button></form>
+    <p class="muted">Same meal dobara ya leftovers bhi log kar sakte hain. Suggestion sirf guide hai, fixed menu nahi.</p></div>
+  <div class="card"><h2>Last 7 days</h2><div class="grid">
+    <div class="stat"><small>Food spend</small><b>${money(weekCost)}</b></div>
+    <div class="stat"><small>Average per day</small><b>${money(weekCost/7)}</b></div>
+    <div class="stat"><small>Meals logged</small><b>${week.length}</b></div></div></div>
+  <div class="card"><h2>Recent meals</h2>${recent||'<p class="muted">No meals logged yet.</p>'}</div>
+  <div class="card"><h2>Budget protein ideas</h2>${MEALS.filter(m=>m.type==='budget').map(m=>`<div class="item"><div><b>${esc(m.name)}</b><small>Protein: ${esc(m.protein)} · ${esc(m.note)}</small></div></div>`).join('')}</div>`;
+}
+function logMeal(){
+  const sel=$('mn').value;
+  const name=sel==='Other (custom)'?($('mx').value.trim()||'Custom meal'):sel;
+  const meal=MEALS.find(m=>m.name===sel);
+  S.meals.log.unshift({id:Date.now(),name,type:meal?meal.type:'other',date:today(),cost:parseFloat($('mc').value)||0,where:$('mw').value});
+  save();render();
+}
+function delMeal(i){S.meals.log.splice(i,1);save();render()}
+
+/* ---------- ROUTER ---------- */
+const TABS=[['shared','📒 Shared',sharedView],['personal','💼 Personal',personalView],['bills','🧾 Bills & Fuel',billsView],['prayer','🕌 Prayer',prayerView],['meals','🍳 Meals',newMealsView],['gov','🏛️ Contacts',govView]];
+function render(){
+  $('nav').innerHTML=TABS.map(([k,l])=>`<button class="${S.tab===k?'on':''}" onclick="setTab('${k}')">${l}</button>`).join('');
+  $('app').innerHTML=(TABS.find(t=>t[0]===S.tab)||TABS[0])[2]();
+}
+function setTab(t){S.tab=t;save();render()}
+function saveAzan(input){const f=input.files&&input.files[0];if(!f)return;if(f.size>2*1024*1024)return alert('Please choose a file under 2 MB');const r=new FileReader();r.onload=()=>{S.azan=r.result;save();render()};r.readAsDataURL(f)}
+function removeAzan(){delete S.azan;save();render()}
+
+let actx=null;const fired={};
+function unlockAudio(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume()}catch(e){}}
+function toggleAlarm(){S.alarm=!S.alarm;save();if(S.alarm){unlockAudio();beep()}render()}
+function beep(){if(S.azan){new Audio(S.azan).play().catch(()=>{});return}try{speechSynthesis.speak(new SpeechSynthesisUtterance('Allahu Akbar'))}catch(e){}try{if(!actx)return;for(let i=0;i<3;i++){const o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;g.gain.value=0.3;o.connect(g);g.connect(actx.destination);o.start(actx.currentTime+i*0.6);o.stop(actx.currentTime+i*0.6+0.4)}}catch(e){}}
+function checkPrayer(){
+  if(!S.alarm)return;
+  const now=new Date(),hm=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0'),day=today();
+  prayerTimes().forEach(([name,t])=>{
+    const k=day+name;
+    if(t===hm&&!fired[k]){
+      fired[k]=1;
+      $('alarmBox').innerHTML=`<div class="alert over" style="margin:0 12px 12px"><b>🕌 ${name} time: ${t}</b> <button class="ghost" onclick="$('alarmBox').innerHTML=''">Dismiss</button></div>`;
+      beep();
+    }
+  });
+}
+setInterval(checkPrayer,15000);
+render();
+</script>
+</body>
+</html>

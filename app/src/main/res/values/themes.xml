@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Splitora" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#0F2A43</item>
+        <item name="colorPrimaryDark">#0F2A43</item>
+        <item name="colorAccent">#14B8A6</item>
+    </style>
+</resources>
