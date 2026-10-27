@@ -91,15 +91,17 @@ function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}pushRe
 function shareable(){const o=Object.assign({},S);delete o.tab;delete o.alarm;delete o.azan;delete o.personal;delete o.group;return o}
 function setSync(m){syncMsg=m;const e=document.getElementById('syncStat');if(e)e.textContent=m}
 function isTyping(){return /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)}
+let pending=0;
 function pushRemote(){
   if(!S.group)return;
+  pending++;
   setSync('Saving...');
   fetch(`${DB}/groups/${S.group}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(shareable())})
-    .then(r=>{if(!r.ok)throw 0;setSync('Synced '+new Date().toLocaleTimeString())})
-    .catch(()=>setSync('Offline, will retry on next change'));
+    .then(r=>{pending--;if(!r.ok)throw 0;setSync('Synced '+new Date().toLocaleTimeString())})
+    .catch(()=>{pending=Math.max(0,pending-1);setSync('Offline, will retry on next change')});
 }
 function pullRemote(first){
-  if(!S.group)return;
+  if(!S.group||pending>0)return;
   fetch(`${DB}/groups/${S.group}.json`).then(r=>r.json()).then(d=>{
     if(d&&d.members){
       const keep={tab:S.tab,alarm:S.alarm,azan:S.azan,personal:S.personal,group:S.group};
@@ -144,14 +146,15 @@ function sharedView(){
   const sets=settlements(B.net);
   const setHtml=sets.length?sets.map(s=>`<div class="item"><span><b>${esc(n[s.from])}</b> pays <b>${esc(n[s.to])}</b></span><b>${money(s.amt)}</b></div>`).join(''):'<p class="muted">Everyone is square. Nothing to settle.</p>';
   const list=S.shared.length?S.shared.map(x=>`<div class="item"><div><b>${esc(x.desc)}</b><small>${esc(x.cat)} · ${esc(n[x.paidBy])} paid · ${money(x.amount)}</small></div><button class="del" onclick="delShared(${x.id})">×</button></div>`).join(''):'<p class="muted">No shared expenses yet.</p>';
-  return `${alert}
+  return `${groupView()}${alert}
   <div class="card"><h2>Shared ledger</h2><div class="grid">
     <div class="stat"><small>Total spent</small><b>${money(B.total)}</b></div>
     <div class="stat"><small>Each person's share</small><b>${money(B.share)}</b></div></div></div>
   <div class="card"><h2>Who paid what</h2><table><tr><th>Name</th><th>Paid</th><th>Share</th><th>Balance</th></tr>${rows}</table>
     <p class="muted">+ means you will get money back, - means you owe.</p></div>
   <div class="card"><h2>Settle up</h2>${setHtml}</div>
-  <div class="card"><h2>Add shared expense</h2><form onsubmit="event.preventDefault();addShared()">
+  ${n.length<2?'<div class="alert info"><b>Next step:</b> Add at least 2 members above, then the expense form will open here.</div>':''}
+  <div class="card" style="${n.length<2?'display:none':''}"><h2>Add shared expense</h2><form onsubmit="event.preventDefault();addShared()">
     <input id="sd" placeholder="Item (e.g. Chicken karahi)">
     <input id="sa" type="number" min="0" placeholder="Amount (Rs)">
     <select id="sp">${n.map((m,i)=>`<option value="${i}">${esc(m)} paid</option>`).join('')}</select>
@@ -353,7 +356,7 @@ function ratesView(){
 }
 function addRate(){const i=$('ri').value.trim(),p=parseFloat($('rp').value);if(!i||!(p>0))return alert('Enter item and price');S.rates.unshift({id:Date.now(),item:i,price:p,date:$('rd').value||today(),cat:$('rc').value});save();render()}
 function delRate(id){S.rates=S.rates.filter(r=>r.id!==id);save();render()}
-TABS.splice(1,0,['group','\U0001F465 Group',groupView],['rates','\U0001F4C8 Rates',ratesView]);
+TABS.splice(1,0,['rates','\U0001F4C8 Rates',ratesView]);
 function render(){
   $('nav').innerHTML=TABS.map(([k,l])=>`<button class="${S.tab===k?'on':''}" onclick="setTab('${k}')">${l}</button>`).join('');
   $('app').innerHTML=(TABS.find(t=>t[0]===S.tab)||TABS[0])[2]();
