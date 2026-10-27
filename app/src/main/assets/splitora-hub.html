@@ -84,13 +84,51 @@ const LINKS=[['OGRA petrol prices','https://ogra.org.pk'],['PTA (internet compla
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
 if(!S)S={members:['You','Friend'],shared:[],personal:{budget:0,catLimits:{},items:[]},bills:[],fuel:{price:398.30,date:'2026-10-09',litres:0},meals:{log:[]},tab:'shared'};
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+S.rates=S.rates||[];S.group=S.group||'';S.members=S.members||['You','Friend'];
+const DB='https://splitora-552ad-default-rtdb.firebaseio.com';
+let syncMsg='Not connected';
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}pushRemote()}
+function shareable(){const o=Object.assign({},S);delete o.tab;delete o.alarm;delete o.azan;delete o.personal;delete o.group;return o}
+function setSync(m){syncMsg=m;const e=document.getElementById('syncStat');if(e)e.textContent=m}
+function isTyping(){return /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)}
+function pushRemote(){
+  if(!S.group)return;
+  setSync('Saving...');
+  fetch(`${DB}/groups/${S.group}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(shareable())})
+    .then(r=>{if(!r.ok)throw 0;setSync('Synced '+new Date().toLocaleTimeString())})
+    .catch(()=>setSync('Offline, will retry on next change'));
+}
+function pullRemote(first){
+  if(!S.group)return;
+  fetch(`${DB}/groups/${S.group}.json`).then(r=>r.json()).then(d=>{
+    if(d&&d.members){
+      const keep={tab:S.tab,alarm:S.alarm,azan:S.azan,personal:S.personal,group:S.group};
+      const before=JSON.stringify(shareable());
+      S=Object.assign({},d,keep);
+      try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+      setSync('Synced '+new Date().toLocaleTimeString());
+      if(JSON.stringify(shareable())!==before&&!isTyping())render();
+    }else if(first){pushRemote()}
+  }).catch(()=>setSync('Offline, will retry on next change'));
+}
+function setGroup(){
+  const c=$('gc').value.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'');
+  if(!c)return alert('Please enter a group code');
+  S.group=c;save();pullRemote(true);render();
+}
+function renameMember(i){const v=$('mn_'+i).value.trim();if(v){S.members[i]=v;save();render()}}
+function addMember(){const v=$('nm').value.trim();if(!v)return alert('Enter a name');S.members.push(v);save();render()}
 
 /* ---------- SHARED ---------- */
 function balances(){
-  const n=S.members.length,total=S.shared.reduce((s,x)=>s+x.amount,0),share=total/n;
+  const total=S.shared.reduce((s,x)=>s+x.amount,0);
+  const shares=S.members.map(()=>0);
+  S.shared.forEach(x=>{
+    const sp=(x.split&&x.split.length)?x.split:S.members.map((_,i)=>i);
+    sp.forEach(i=>{if(shares[i]!==undefined)shares[i]+=x.amount/sp.length});
+  });
   const paid=S.members.map((_,i)=>S.shared.filter(x=>x.paidBy===i).reduce((s,x)=>s+x.amount,0));
-  return {total,share,paid,net:paid.map(p=>p-share)};
+  return {total,share:shares[0]||0,shares,paid,net:paid.map((p,i)=>p-shares[i])};
 }
 function settlements(net){
   const cr=[],db=[],out=[];
@@ -102,7 +140,7 @@ function settlements(net){
 function sharedView(){
   const B=balances(),n=S.members;
   const alert=B.total>=10000?`<div class="alert warn"><b>Shared total ${money(B.total)} ho gaya hai.</b> Hisab clear karne ka sahi waqt hai, neeche settlement dekhein.</div>`:'';
-  const rows=n.map((m,i)=>`<tr><td>${esc(m)}</td><td>${money(B.paid[i])}</td><td>${money(B.share)}</td><td class="${B.net[i]>=0?'pos':'neg'}"><b>${B.net[i]>=0?'+':'-'}${money(Math.abs(B.net[i]))}</b></td></tr>`).join('');
+  const rows=n.map((m,i)=>`<tr><td>${esc(m)}</td><td>${money(B.paid[i])}</td><td>${money(B.shares[i])}</td><td class="${B.net[i]>=0?'pos':'neg'}"><b>${B.net[i]>=0?'+':'-'}${money(Math.abs(B.net[i]))}</b></td></tr>`).join('');
   const sets=settlements(B.net);
   const setHtml=sets.length?sets.map(s=>`<div class="item"><span><b>${esc(n[s.from])}</b> pays <b>${esc(n[s.to])}</b></span><b>${money(s.amt)}</b></div>`).join(''):'<p class="muted">Everyone is square. Nothing to settle.</p>';
   const list=S.shared.length?S.shared.map(x=>`<div class="item"><div><b>${esc(x.desc)}</b><small>${esc(x.cat)} · ${esc(n[x.paidBy])} paid · ${money(x.amount)}</small></div><button class="del" onclick="delShared(${x.id})">×</button></div>`).join(''):'<p class="muted">No shared expenses yet.</p>';
@@ -118,10 +156,18 @@ function sharedView(){
     <input id="sa" type="number" min="0" placeholder="Amount (Rs)">
     <select id="sp">${n.map((m,i)=>`<option value="${i}">${esc(m)} paid</option>`).join('')}</select>
     <select id="sc">${CATS.map(c=>`<option>${c}</option>`).join('')}</select>
+    <div class="muted" style="grid-column:1/-1">Split between: ${n.map((m,i)=>`<label style="margin-right:10px"><input type="checkbox" class="spl" value="${i}" checked> ${esc(m)}</label>`).join('')}</div>
     <button type="submit">Add</button></form></div>
   <div class="card"><h2>Shared history</h2>${list}</div>`;
 }
-function addShared(){const d=$('sd').value.trim(),a=parseFloat($('sa').value);if(!d||!(a>0))return alert('Please enter item and amount');S.shared.unshift({id:Date.now(),desc:d,amount:a,paidBy:+$('sp').value,cat:$('sc').value});save();render()}
+function addShared(){
+  const d=$('sd').value.trim(),a=parseFloat($('sa').value);
+  if(!d||!(a>0))return alert('Please enter item and amount');
+  const split=[...document.querySelectorAll('.spl:checked')].map(c=>+c.value);
+  if(!split.length)return alert('Select at least one person to split with');
+  S.shared.unshift({id:Date.now(),desc:d,amount:a,paidBy:+$('sp').value,cat:$('sc').value,split});
+  save();render();
+}
 function delShared(id){S.shared=S.shared.filter(x=>x.id!==id);save();render()}
 
 /* ---------- PERSONAL ---------- */
@@ -282,6 +328,32 @@ function delMeal(i){S.meals.log.splice(i,1);save();render()}
 
 /* ---------- ROUTER ---------- */
 const TABS=[['shared','📒 Shared',sharedView],['personal','💼 Personal',personalView],['bills','🧾 Bills & Fuel',billsView],['prayer','🕌 Prayer',prayerView],['meals','🍳 Meals',newMealsView],['gov','🏛️ Contacts',govView]];
+const RATE_LINKS=[['Fruits','https://lahore.punjab.gov.pk/fruits-rate-list'],['Vegetables','https://lahore.punjab.gov.pk/vegetables-rate-list'],['Poultry','https://lahore.punjab.gov.pk/poultry-rate-list'],['Essential Commodities','https://lahore.punjab.gov.pk/commodities-rate-list']];
+function groupView(){
+  const names=S.members;
+  return `<div class="card"><h2>Group sync</h2>
+    <p class="muted">Dono phones par same group code likhein, data ek jaisa rahega.</p>
+    <div class="row"><input id="gc" placeholder="Group code (e.g. HOSTEL42)" value="${esc(S.group||'')}"><button class="ghost" onclick="setGroup()">Connect</button></div>
+    <p class="muted">Status: <span id="syncStat">${esc(syncMsg)}</span></p></div>
+  <div class="card"><h2>Members</h2>
+    ${names.map((m,i)=>`<div class="item"><input id="mn_${i}" value="${esc(m)}" style="max-width:220px"><button class="ghost" onclick="renameMember(${i})">Save</button></div>`).join('')}
+    <div class="row" style="margin-top:10px"><input id="nm" placeholder="New member name"><button class="ghost" onclick="addMember()">Add member</button></div>
+    <p class="muted">Members sirf add ya rename ho sakte hain, taake purane kharche kharab na hon.</p></div>`;
+}
+function ratesView(){
+  const latest=[...S.rates].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,40);
+  return `<div class="card"><h2>Official rate lists (Lahore)</h2>
+    <p class="muted">Sarkari lists photos ki shakl mein hoti hain. Link khol kar dekhein, phir neeche rates likhein.</p>
+    ${RATE_LINKS.map(([n,u])=>`<div class="item"><a href="${u}" target="_blank" rel="noopener">${n}</a></div>`).join('')}</div>
+  <div class="card"><h2>Add rate</h2><form onsubmit="event.preventDefault();addRate()">
+    <input id="ri" placeholder="Item (e.g. Onion 1 kg)"><input id="rp" type="number" min="0" step="0.01" placeholder="Price (Rs)">
+    <input id="rd" type="date" value="${today()}"><select id="rc">${['Fruits','Vegetables','Poultry','Essentials'].map(c=>`<option>${c}</option>`).join('')}</select>
+    <button type="submit">Save rate</button></form></div>
+  <div class="card"><h2>Saved rates</h2>${latest.map(r=>`<div class="item"><div><b>${esc(r.item)}</b><small>${r.date} · ${esc(r.cat)}</small></div><div class="row"><b>${money(r.price)}</b><button class="del" onclick="delRate(${r.id})">×</button></div></div>`).join('')||'<p class="muted">No rates saved yet.</p>'}</div>`;
+}
+function addRate(){const i=$('ri').value.trim(),p=parseFloat($('rp').value);if(!i||!(p>0))return alert('Enter item and price');S.rates.unshift({id:Date.now(),item:i,price:p,date:$('rd').value||today(),cat:$('rc').value});save();render()}
+function delRate(id){S.rates=S.rates.filter(r=>r.id!==id);save();render()}
+TABS.splice(1,0,['group','\U0001F465 Group',groupView],['rates','\U0001F4C8 Rates',ratesView]);
 function render(){
   $('nav').innerHTML=TABS.map(([k,l])=>`<button class="${S.tab===k?'on':''}" onclick="setTab('${k}')">${l}</button>`).join('');
   $('app').innerHTML=(TABS.find(t=>t[0]===S.tab)||TABS[0])[2]();
@@ -307,6 +379,8 @@ function checkPrayer(){
   });
 }
 setInterval(checkPrayer,15000);
+if(S.group)pullRemote(false);
+setInterval(()=>{if(S.group&&!isTyping())pullRemote(false)},15000);
 render();
 </script>
 </body>
